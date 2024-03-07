@@ -1,4 +1,4 @@
-# A simple demo of using bboyredstar:stale-session package
+# bboyredstar:stale-session for Meteor 3.0
 
 Stale session and session timeout handling for [Meteorjs](http://www.meteor.com/).
 

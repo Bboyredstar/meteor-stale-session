@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2018",
+    "lib": ["ES2015"],
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "typeRoots": ["./.npm/package/node_modules/@types"],
+    "baseUrl": ".",
+    "paths": {
+      "*": ["*", ".npm/package/node_modules/*"],
+      "meteor/*": [
+        "node_modules/@types/meteor/*",
+        ".meteor/local/types/packages.d.ts"
+      ]
+    }
+  },
+  "include": [
+    "./server/**/*.ts",
+    "./client/**/*.ts",
+    "./*.d.ts",
+    "utils/settings.ts"
+  ]
+}

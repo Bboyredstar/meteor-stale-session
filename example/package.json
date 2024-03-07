@@ -1,0 +1,42 @@
+{
+  "name": "meteor-stale-session",
+  "version": "1.0.0",
+  "description": "Activity detection for the session timeout",
+  "private": true,
+  "scripts": {
+    "start": "meteor run --settings settings.json",
+    "test": "meteor test --once --driver-package meteortesting:mocha",
+    "test-app": "TEST_WATCH=1 meteor test --full-app --driver-package meteortesting:mocha",
+    "visualize": "meteor --production --extra-packages bundle-visualizer"
+  },
+  "dependencies": {
+    "@babel/runtime": "^7.23.5",
+    "bootstrap": "^5.3.3",
+    "meteor-node-stubs": "^1.2.7",
+    "react": "^18.2.0",
+    "react-bootstrap": "^2.10.1",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^5.2.0"
+  },
+  "meteor": {
+    "mainModule": {
+      "client": "client/main.jsx",
+      "server": "server/main.js"
+    },
+    "testModule": "tests/main.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bboyredstar/meteor-stale-session.git"
+  },
+  "keywords": [
+    "stale-session",
+    "meteor"
+  ],
+  "author": "tima@milkandcartoons.com",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Bboyredstar/meteor-stale-session/issues"
+  },
+  "homepage": "https://github.com/Bboyredstar/meteor-stale-session#readme"
+}
