@@ -1,0 +1,13 @@
+{
+  "public": {
+    "packages": {
+      "stale-session": {
+        "inactiveTimeoutMs": 60000,
+        "heartbeatIntervalMs": 60000,
+        "forceLogout": true,
+        "heartbeatCollectionName": "heartbeat",
+        "activityEvents": "resize"
+      }
+    }
+  }
+}
