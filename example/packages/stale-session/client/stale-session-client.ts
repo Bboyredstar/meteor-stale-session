@@ -1,6 +1,16 @@
 import { Meteor } from "meteor/meteor";
+import { checkNpmVersions } from "meteor/tmeasday:check-npm-versions";
 import $ from "jquery";
 import throttle from "lodash.throttle";
+
+// We don't use Npm.depends to prevent possible second copy of a popular npm packages
+checkNpmVersions(
+  {
+    jquery: "3.5.0",
+    "lodash.throttle": "4.1.x",
+  },
+  "bboyredstar:stale-session"
+);
 
 import { HEARTBEAT_METHOD_NAME } from "../utils/constants";
 
