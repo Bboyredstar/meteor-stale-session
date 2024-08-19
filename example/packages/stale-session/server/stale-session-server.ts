@@ -151,6 +151,11 @@ export class StaleSessionServer {
 
         self?.logger?.log(`Detected heartbeat from the user ${user._id}`);
 
+        // Remove possible old entities
+        await self?.HeartbeatCollection?.removeAsync({
+          userId: user?._id,
+        });
+
         const createdAt = new Date();
         const _id = await self?.HeartbeatCollection?.insertAsync({
           userId: user._id,
