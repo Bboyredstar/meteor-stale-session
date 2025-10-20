@@ -1,24 +1,22 @@
 {
   "compilerOptions": {
-    "target": "ES2018",
-    "lib": ["ES2015"],
-    "module": "commonjs",
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
-    "typeRoots": ["./.npm/package/node_modules/@types"],
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "noEmit": true,
+    "incremental": true,
+    "preserveSymlinks": true,
     "baseUrl": ".",
-    "paths": {
-      "*": ["*", ".npm/package/node_modules/*"],
-      "meteor/*": [
-        "node_modules/@types/meteor/*",
-        ".meteor/local/types/packages.d.ts"
-      ]
-    }
+    "typeRoots": ["./node_modules/@types"]
   },
-  "include": [
-    "./server/**/*.ts",
-    "./client/**/*.ts",
-    "./*.d.ts",
-    "utils/settings.ts"
-  ]
+  "include": ["./imports/**/*.ts", "./index.ts"],
+  "exclude": ["node_modules/**/*", ".npm/**/*", ".meteor/**/*"]
 }

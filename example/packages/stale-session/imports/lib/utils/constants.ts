@@ -9,40 +9,40 @@ const STALE_SESSION_HEARTBEAT_INTERVAL_MS = 3 * 60 * 1000; //3 min
 // Whether or not we want to force log out and purge stale sessions
 const FORCE_LOGOUT = false;
 
-const DEFAULT_HEARTBEAT_COLLECTION_NAME = "heartbeat";
+const DEFAULT_HEARTBEAT_COLLECTION_NAME = 'heartbeat';
 
 /* Client constants */
 
 // the jquery events which are considered indicator of activity e.g. in an on() call.
-const ACTIVITY_EVENTS = "mousemove click keydown";
+const ACTIVITY_EVENTS = 'mousemove click keydown';
 
 const VALID_EVENT_TYPES = [
-  "click",
-  "dblclick",
-  "mousedown",
-  "mouseup",
-  "mousemove",
-  "mouseover",
-  "mouseout",
-  "mouseenter",
-  "mouseleave",
-  "keydown",
-  "keypress",
-  "keyup",
-  "focus",
-  "blur",
-  "change",
-  "select",
-  "submit",
-  "scroll",
-  "resize",
-  "contextmenu",
-  "touchstart",
-  "touchmove",
-  "touchend",
+  'click',
+  'dblclick',
+  'mousedown',
+  'mouseup',
+  'mousemove',
+  'mouseover',
+  'mouseout',
+  'mouseenter',
+  'mouseleave',
+  'keydown',
+  'keypress',
+  'keyup',
+  'focus',
+  'blur',
+  'change',
+  'select',
+  'submit',
+  'scroll',
+  'resize',
+  'contextmenu',
+  'touchstart',
+  'touchmove',
+  'touchend',
 ];
 
-const HEARTBEAT_METHOD_NAME = "heartbeat";
+const HEARTBEAT_METHOD_NAME = 'heartbeat';
 
 export {
   DEFAULT_HEARTBEAT_COLLECTION_NAME,

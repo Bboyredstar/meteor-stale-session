@@ -1,33 +1,22 @@
 Package.describe({
-  name: "bboyredstar:stale-session",
-  version: "0.0.4-beta-2",
-  // Brief, one-line summary of the package.
-  summary: "Activity detection for the session timeout",
-  // URL to the Git repository containing the source code for this package.
-  git: "https://github.com/Bboyredstar/meteor-stale-session",
-  // By default, Meteor will default to using README.md for documentation.
-  // To avoid submitting documentation, set this field to null.
-  documentation: "../../../README.md",
+  name: 'bboyredstar:stale-session',
+  version: '0.0.5',
+  summary: 'Activity detection for the session timeout',
+  git: 'https://github.com/Bboyredstar/meteor-stale-session',
+  documentation: './README.md',
 });
 
 Npm.depends({
-  "@types/meteor": "2.9.7",
-  "lodash.throttle": "4.1.1",
-  "simpl-schema": "3.4.1",
-  jquery: "3.5.0",
+  'simpl-schema': '3.4.6',
+  '@types/meteor': '2.9.8',
+  '@types/jquery': '3.5.33',
+  'lodash.throttle': '4.1.1',
+  jquery: '3.7.1',
+  '@types/lodash.throttle': '4.1.9',
 });
 
 Package.onUse(function (api) {
-  api.versionsFrom(["2.9.0", "3.0-rc.0"]);
-  api.use([
-    "ecmascript",
-    "typescript@5.4.3",
-    "tmeasday:check-npm-versions@2.0.0",
-  ]);
-
-  api.mainModule("server/stale-session-server.ts", "server");
-  api.mainModule("client/stale-session-client.ts", "client");
-
-  api.export("StaleSessionServer", "server");
-  api.export("StaleSessionClient", "client");
+  api.versionsFrom(['2.9.0', '3.3.2']);
+  api.use(['ecmascript', 'typescript@5.6.6', 'zodern:types@1.0.13']);
+  api.mainModule('index.ts');
 });
