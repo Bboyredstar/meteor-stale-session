@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "noEmit": false,
+    "typeRoots": [
+      "./.npm/package/node_modules/@types",
+      "./node_modules/@types"
+    ],
+    "paths": {
+      "meteor/*": ["./.npm/package/node_modules/@types/meteor/*"]
+    }
+  }
+}

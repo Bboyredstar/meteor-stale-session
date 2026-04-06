@@ -38,5 +38,8 @@
   "bugs": {
     "url": "https://github.com/Bboyredstar/meteor-stale-session/issues"
   },
-  "homepage": "https://github.com/Bboyredstar/meteor-stale-session#readme"
+  "homepage": "https://github.com/Bboyredstar/meteor-stale-session#readme",
+  "devDependencies": {
+    "typescript": "^6.0.2"
+  }
 }

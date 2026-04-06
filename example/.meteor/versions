@@ -5,7 +5,7 @@ autoupdate@2.0.1
 babel-compiler@7.13.0
 babel-runtime@1.5.2
 base64@1.0.13
-bboyredstar:stale-session@0.0.5
+bboyredstar:stale-session@0.1.0
 binary-heap@1.0.12
 boilerplate-generator@2.1.0
 caching-compiler@2.0.1

@@ -3,7 +3,8 @@
     "target": "ES2020",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
+    "ignoreDeprecations": "5.0",
     "strict": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -14,7 +15,6 @@
     "noEmit": true,
     "incremental": true,
     "preserveSymlinks": true,
-    "baseUrl": ".",
     "typeRoots": ["./node_modules/@types"]
   },
   "include": ["./imports/**/*.ts", "./index.ts"],
