@@ -1,4 +1,5 @@
 import React from "react";
+import { Meteor } from "meteor/meteor";
 import { useTracker } from "meteor/react-meteor-data";
 import {
   Switch,
@@ -14,10 +15,6 @@ import Col from "react-bootstrap/Col";
 
 import { Home } from "./Home";
 import { Login } from "./Login";
-
-const IfRender = ({ isTrue, children }) => {
-  return <>{isTrue ? children : null}</>;
-};
 
 export const App = () => {
   const { user, loading } = useTracker(() => {
@@ -36,27 +33,25 @@ export const App = () => {
 
   return (
     <Router>
-      <Switch>
-        <Container>
-          <Row>
-            <Col lg={{ span: 6, offset: 3 }}>
-              <IfRender isTrue={!!user}>
-                <Route path="/">
-                  <Home />
-                </Route>
-              </IfRender>
-
-              <IfRender isTrue={!user}>
-                <Route path="/login">
-                  <Login />
-                </Route>
-              </IfRender>
-
-              <Redirect to={user ? "/" : "login"} />
-            </Col>
-          </Row>
-        </Container>
-      </Switch>
+      <Container>
+        <Row>
+          <Col lg={{ span: 6, offset: 3 }}>
+            <Switch>
+              {user ? (
+                <>
+                  <Route path="/" exact component={Home} />
+                  <Redirect to="/" />
+                </>
+              ) : (
+                <>
+                  <Route path="/login" component={Login} />
+                  <Redirect to="/login" />
+                </>
+              )}
+            </Switch>
+          </Col>
+        </Row>
+      </Container>
     </Router>
   );
 };

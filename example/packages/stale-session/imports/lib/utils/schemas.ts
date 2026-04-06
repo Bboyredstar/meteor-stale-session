@@ -46,6 +46,7 @@ export const settingsSchema = new SimpleSchema({
   },
   activityEvents: {
     type: String,
+    optional: true,
     custom(this: ValidatorContext) {
       return areValidEventTypes(this);
     },

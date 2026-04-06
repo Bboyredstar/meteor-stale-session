@@ -2,7 +2,7 @@
   "public": {
     "packages": {
       "stale-session": {
-        "inactiveTimeoutMs": 30000,
+        "inactiveTimeoutMs": 300000,
         "heartbeatIntervalMs": 30000,
         "forceLogout": true,
         "heartbeatCollectionName": "user_sessions",

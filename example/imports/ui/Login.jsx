@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Meteor } from "meteor/meteor";
 import { Form, Button, Alert } from "react-bootstrap";
 
 export const Login = () => {
@@ -6,15 +7,18 @@ export const Login = () => {
     email: "user@poplar.com",
     password: "user",
   });
+  const [error, setError] = useState(null);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.id]: e.target.value });
+    setError(null);
   };
+
   const handleSubmit = () => {
-    Meteor.loginWithPassword(form.email, form.password, (error) => {
-      if (error) {
-        window.alert(error);
-        return;
+    setError(null);
+    Meteor.loginWithPassword(form.email, form.password, (err) => {
+      if (err) {
+        setError(err.reason || err.message || "Login failed");
       }
     });
   };
@@ -27,9 +31,14 @@ export const Login = () => {
         handleSubmit();
       }}
     >
+      <h4 className="mb-3 text-center">Sign In</h4>
+
       <Alert variant="info">
-        Please use "user@poplar.com" as email and "user" as password
+        Default credentials are pre-filled — just click <strong>Sign In</strong>.
       </Alert>
+
+      {error && <Alert variant="danger">{error}</Alert>}
+
       <Form.Group className="mb-3">
         <Form.Label>Email address</Form.Label>
         <Form.Control
@@ -51,7 +60,7 @@ export const Login = () => {
         />
       </Form.Group>
       <Button variant="primary" type="submit">
-        Submit
+        Sign In
       </Button>
     </Form>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Row,
   Col,
@@ -8,8 +8,12 @@ import {
   Button,
   Card,
 } from 'react-bootstrap';
+import { Meteor } from 'meteor/meteor';
 import { useTracker } from 'meteor/react-meteor-data';
-import { staleSession } from '../../client/main';
+import { staleSession, HEARTBEAT_METHOD_NAME } from '../../client/main';
+
+// Fallback matching settings.json defaults
+const DEFAULT_INACTIVE_TIMEOUT_MS = 300000; // 5 min
 
 export const Home = () => {
   const [activityDetected, setActivityDetected] = useState(false);
@@ -24,13 +28,28 @@ export const Home = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Send a heartbeat immediately and return the updated lastHeartbeat
+  const sendHeartbeat = useCallback(async () => {
+    try {
+      await Meteor.callAsync(HEARTBEAT_METHOD_NAME, {});
+      staleSession.markActivityDetected();
+    } catch (err) {
+      console.error('Heartbeat failed:', err);
+    }
+  }, []);
+
+  // Send an initial heartbeat as soon as the component mounts so the timer
+  // starts immediately rather than showing 0s until the first 30s interval tick.
+  useEffect(() => {
+    sendHeartbeat();
+  }, [sendHeartbeat]);
+
   const {
     heartbeatCount,
     isConnected,
     user,
     settings,
     lastHeartbeat,
-    timeUntilLogout,
   } = useTracker(() => {
     const subscription = Meteor.subscribe('staleSessionHeartbeats');
     const currentUser = Meteor.user();
@@ -38,7 +57,6 @@ export const Home = () => {
 
     let count = 0;
     let lastBeat = null;
-    let timeLeft = 0;
 
     if (subscription.ready() && currentUser) {
       const heartbeats = staleSession.heartbeatCollection
@@ -49,14 +67,6 @@ export const Home = () => {
 
       if (heartbeats.length > 0) {
         lastBeat = heartbeats[0].createdAt;
-
-        // Calculate exact time until logout based on server logic
-        const now = currentTime.getTime();
-        const lastBeatTime = lastBeat.getTime();
-        const timeSinceLastBeat = now - lastBeatTime;
-        const timeoutMs = appSettings?.inactiveTimeoutMs || 30000;
-        const remaining = Math.max(0, timeoutMs - timeSinceLastBeat);
-        timeLeft = Math.ceil(remaining / 1000);
       }
     }
 
@@ -66,9 +76,21 @@ export const Home = () => {
       user: currentUser,
       settings: appSettings,
       lastHeartbeat: lastBeat,
-      timeUntilLogout: timeLeft,
     };
-  }, [currentTime]); // Re-run when currentTime updates
+  }); // No deps — purely reactive, reruns only when Meteor data changes
+
+  // Compute countdown outside useTracker so it updates every second from the
+  // setInterval above without tearing down the subscription.
+  const timeoutMs = settings?.inactiveTimeoutMs || DEFAULT_INACTIVE_TIMEOUT_MS;
+  const timeUntilLogout = lastHeartbeat
+    ? Math.max(
+        0,
+        Math.ceil(
+          (timeoutMs - (currentTime.getTime() - lastHeartbeat.getTime())) / 1000
+        )
+      )
+    : 0;
+
 
   // Activity monitoring for UI feedback only
   useEffect(() => {
@@ -93,9 +115,10 @@ export const Home = () => {
     };
   }, [settings]);
 
+
   const progressPercentage =
     settings && lastHeartbeat
-      ? (timeUntilLogout / (settings.inactiveTimeoutMs / 1000)) * 100
+      ? (timeUntilLogout / (timeoutMs / 1000)) * 100
       : 0;
 
   const getProgressVariant = () => {
@@ -162,15 +185,19 @@ export const Home = () => {
           </Card>
         </Col>
         <Col lg={3}>
-          <Card className={`text-center border-${getProgressVariant()}`}>
+          <Card className={`text-center border-${lastHeartbeat ? getProgressVariant() : 'secondary'}`}>
             <Card.Body>
               <h5>⏰ Until Logout</h5>
-              <Badge
-                bg={getProgressVariant()}
-                style={{ fontSize: '1.2em' }}
-              >
-                {timeUntilLogout}s
-              </Badge>
+              {lastHeartbeat ? (
+                <Badge
+                  bg={getProgressVariant()}
+                  style={{ fontSize: '1.2em' }}
+                >
+                  {timeUntilLogout}s
+                </Badge>
+              ) : (
+                <Badge bg='secondary'>Waiting…</Badge>
+              )}
             </Card.Body>
           </Card>
         </Col>
@@ -198,8 +225,7 @@ export const Home = () => {
                     <small>
                       Server will disconnect after:{' '}
                       {new Date(
-                        lastHeartbeat.getTime() +
-                          (settings?.inactiveTimeoutMs || 30000)
+                        lastHeartbeat.getTime() + timeoutMs
                       ).toLocaleTimeString()}
                     </small>
                   </>
@@ -227,8 +253,7 @@ export const Home = () => {
               </li>
               <li>
                 <strong>Wait for logout</strong> - after{' '}
-                {settings?.inactiveTimeoutMs / 1000 || 30} seconds you'll be
-                automatically logged out
+                {timeoutMs / 1000} seconds you'll be automatically logged out
               </li>
               <li>
                 <strong>Test activity</strong> - any mouse movement/click will
@@ -242,13 +267,13 @@ export const Home = () => {
                 <li>
                   Inactive Timeout:{' '}
                   <Badge bg='secondary'>
-                    {settings?.inactiveTimeoutMs / 1000 || 30}s
+                    {timeoutMs / 1000}s
                   </Badge>
                 </li>
                 <li>
                   Check Interval:{' '}
                   <Badge bg='secondary'>
-                    {settings?.heartbeatIntervalMs / 1000 || 30}s
+                    {(settings?.heartbeatIntervalMs || 30000) / 1000}s
                   </Badge>
                 </li>
                 <li>
@@ -274,23 +299,17 @@ export const Home = () => {
               <div className='d-grid gap-2 d-md-flex justify-content-md-center'>
                 <Button
                   variant='success'
-                  onClick={() => {
-                    // Trigger activity to force a heartbeat
-                    if (staleSession.markActivityDetected) {
-                      staleSession.markActivityDetected();
-                    }
-                  }}
+                  onClick={sendHeartbeat}
                 >
-                  ✅ Trigger Activity (Send Heartbeat)
+                  ✅ Send Heartbeat Now
                 </Button>
                 <Button
                   variant='info'
                   onClick={() => {
-                    // Force refresh of subscription data
                     window.location.reload();
                   }}
                 >
-                  � Refresh Data
+                  🔄 Refresh Data
                 </Button>
                 <Button
                   variant='danger'
@@ -327,8 +346,7 @@ export const Home = () => {
                     timeUntilLogout,
                     disconnectTime: lastHeartbeat
                       ? new Date(
-                          lastHeartbeat.getTime() +
-                            (settings?.inactiveTimeoutMs || 30000)
+                          lastHeartbeat.getTime() + timeoutMs
                         ).toISOString()
                       : null,
                     settings,

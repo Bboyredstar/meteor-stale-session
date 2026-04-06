@@ -36,14 +36,4 @@ Meteor.startup(async () => {
       _id: this.userId,
     });
   });
-
-  Meteor.publish('staleSessionHeartbeats', function () {
-    if (!this.userId) {
-      this.ready();
-    }
-
-    return staleSessionFromSettings.heartbeatCollection.find({
-      userId: this.userId,
-    });
-  });
 });

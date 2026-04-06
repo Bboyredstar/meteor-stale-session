@@ -210,55 +210,75 @@ export class StaleSession {
       };
 
       const heartbeats = await this.HeartbeatCollection?.find(heartbeatQuery, {
-        fields: { userId: 1 },
+        fields: { userId: 1, createdAt: 1 },
       })?.fetchAsync();
 
       if (!heartbeats?.length) {
         return;
       }
 
-      const heartbeatIds: string[] = [];
-      const disconnectedUsersIds: string[] = [];
+      const heartbeatIdsToRemove: string[] = [];
+      const userIdsToLogout: string[] = [];
 
-      heartbeats.forEach((heartbeat: HeartbeatCollection) => {
-        heartbeatIds.push(heartbeat._id);
-        disconnectedUsersIds.push(heartbeat.userId);
-      });
+      for (const heartbeat of heartbeats) {
+        // Re-check whether the user has logged in on another device AFTER this
+        // heartbeat was recorded. If any login token is newer than the stale
+        // heartbeat's createdAt, the user re-authenticated and must not be
+        // logged out — the onLogin hook will have already cleaned up the stale
+        // heartbeat doc asynchronously, but we guard here too to close the race.
+        const user = await Meteor.users.findOneAsync(
+          { _id: heartbeat.userId },
+          { fields: { 'services.resume.loginTokens': 1 } }
+        );
 
-      // Log users that are getting interactive session tokens removed
+        const loginTokens: { when: Date | string }[] =
+          (user as any)?.services?.resume?.loginTokens ?? [];
+
+        const hasNewerSession = loginTokens.some((token) => {
+          const tokenDate = new Date(token.when);
+          return tokenDate > heartbeat.createdAt;
+        });
+
+        if (hasNewerSession) {
+          // User has logged in after this heartbeat was created — they have an
+          // active session on another device. Only remove the stale heartbeat
+          // doc; do NOT wipe their tokens.
+          this.logInfo(
+            `Skipping logout for user ${heartbeat.userId}: active session found after stale heartbeat`
+          );
+          heartbeatIdsToRemove.push(heartbeat._id);
+        } else {
+          heartbeatIdsToRemove.push(heartbeat._id);
+          userIdsToLogout.push(heartbeat.userId);
+        }
+      }
+
       this.logInfo(
-        `Removing interactive session tokens for: ${disconnectedUsersIds.join(
-          ', '
-        )}`
+        `Removing session tokens for: ${userIdsToLogout.join(', ')}`
       );
 
       try {
-        // Remove the session tokens
-        await Meteor.users.updateAsync(
-          // Find all the users who have an overdue heartbeat
-          { _id: { $in: disconnectedUsersIds } },
-
-          // Remove all of the loginTokens that came from the Web UI
-          {
-            $pull: {
-              'services.resume.loginTokens': { when: { $exists: true } },
-            },
-          },
-          { multi: true }
-        );
+        if (userIdsToLogout.length > 0) {
+          await Meteor.users.updateAsync(
+            { _id: { $in: userIdsToLogout } },
+            { $set: { 'services.resume.loginTokens': [] } },
+            { multi: true }
+          );
+        }
 
         await this.HeartbeatCollection!.removeAsync({
-          _id: { $in: heartbeatIds },
+          _id: { $in: heartbeatIdsToRemove },
         });
 
         this.logInfo(
-          `Successfully processed ${heartbeatIds.length} stale sessions`
+          `Processed ${heartbeatIdsToRemove.length} stale heartbeat(s), logged out ${userIdsToLogout.length} user(s)`
         );
       } catch (error) {
         this.logError('Error processing stale sessions:', error);
       }
     }, this.heartbeatIntervalMs);
   }
+
 
   private createHeartbeatCollection(): Mongo.Collection<HeartbeatCollection> {
     if (this.HeartbeatCollection) {
