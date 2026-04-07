@@ -34,14 +34,6 @@ export const settingsSchema = new SimpleSchema({
     type: Number,
     // 5 seconds
     min: 5000,
-    custom(this: ValidatorContext) {
-      const heartbeat = this.value as number;
-      const timeout = this.obj.inactiveTimeoutMs as number;
-
-      if (heartbeat >= timeout) {
-        return 'heartbeatMustBeLessThanTimeout';
-      }
-    },
   },
   forceLogout: {
     type: Boolean,

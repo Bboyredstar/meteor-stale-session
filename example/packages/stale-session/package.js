@@ -9,10 +9,6 @@ Package.describe({
 Npm.depends({
   'simpl-schema': '3.4.6',
   '@types/meteor': '2.9.8',
-  '@types/jquery': '3.5.33',
-  'lodash.throttle': '4.1.1',
-  jquery: '3.7.1',
-  '@types/lodash.throttle': '4.1.9',
 });
 
 Package.onUse(function (api) {

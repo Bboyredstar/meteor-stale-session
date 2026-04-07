@@ -20,20 +20,6 @@ import type {
   HeartbeatResponse,
 } from './types';
 
-// Dynamic imports for client-only dependencies
-let $: any;
-let throttle: any;
-
-if (Meteor.isClient) {
-  // Dynamic imports for client-side only
-  import('jquery').then((jQuery) => {
-    $ = jQuery.default;
-  });
-
-  import('lodash.throttle').then((throttleModule) => {
-    throttle = throttleModule.default;
-  });
-}
 
 export class StaleSession {
   protected logger?: Logger;
@@ -52,6 +38,11 @@ export class StaleSession {
     HeartbeatCollection
   >;
 
+  // Static registry to avoid duplicate Mongo.Collection creation
+  private static collectionRegistry = new Map<
+    string,
+    Mongo.Collection<HeartbeatCollection, HeartbeatCollection>
+  >();
   public constructor(config?: Partial<StaleSessionConfig>, logger?: Logger) {
     this.logger = logger;
 
@@ -120,49 +111,44 @@ export class StaleSession {
   private runClient(): void {
     const self = this;
 
-    // Wait for dynamic imports to complete
-    const waitForImports = () => {
-      if (!$ || !throttle) {
-        setTimeout(waitForImports, 100);
-        return;
+    Meteor.setInterval(async () => {
+      const user = Meteor.user({ fields: { _id: 1 } });
+
+      if (user?._id && this.activityDetected) {
+        try {
+          await Meteor.callAsync(HEARTBEAT_METHOD_NAME, {});
+          !Meteor.isProduction &&
+            self.logInfo(`Heartbeat sent for user ${user._id}`);
+        } catch (error) {
+          self.logError(
+            `An error occurred while trying to call "${HEARTBEAT_METHOD_NAME}"`,
+            { error },
+          );
+        }
+
+        self.activityDetected = false;
       }
+    }, this.heartbeatIntervalMs);
 
-      Meteor.setInterval(async () => {
-        const user = Meteor.user({ fields: { _id: 1 } });
+    // Simple throttle: ignore events for 5s after the first detection
+    let throttled = false;
+    const onActivity = () => {
+      if (throttled) return;
+      throttled = true;
+      setTimeout(() => { throttled = false; }, 5000);
 
-        if (user?._id && this.activityDetected) {
-          try {
-            await Meteor.callAsync(HEARTBEAT_METHOD_NAME, {});
-            !Meteor.isProduction &&
-              self.logInfo(`Heartbeat sent for user ${user._id}`);
-          } catch (error) {
-            self.logError(
-              `An error occurred while trying to call "${HEARTBEAT_METHOD_NAME}"`,
-              { error },
-            );
-          }
-
-          self.activityDetected = false; // Сбрасываем флаг активности
-        }
-      }, this.heartbeatIntervalMs);
-
-      // Detect activity and mark it as detected on any of the following events
-      const throttledActivityDetector = throttle(() => {
-        if (!self.activityDetected) {
-          self.activityDetected = true;
-          self.logInfo('User activity detected');
-        }
-      }, 5000);
-
-      const events = this.activityEvents || activityEvents;
-      $(document).on(events, () => {
-        throttledActivityDetector();
-      });
-
-      self.logInfo(`StaleSession client started with events: ${events}`);
+      if (!self.activityDetected) {
+        self.activityDetected = true;
+        !Meteor.isProduction && self.logInfo('User activity detected');
+      }
     };
 
-    waitForImports();
+    const events = (this.activityEvents || activityEvents).split(' ');
+    for (const event of events) {
+      document.addEventListener(event, onActivity, { passive: true });
+    }
+
+    self.logInfo(`StaleSession client started with events: ${events.join(' ')}`);
   }
 
   // Server-side implementation
@@ -284,19 +270,28 @@ export class StaleSession {
     if (this.HeartbeatCollection) {
       return this.HeartbeatCollection;
     }
-    try {
-      const HeartbeatCollection = new Mongo.Collection<HeartbeatCollection>(
-        this.heartbeatCollectionName,
-      );
 
+    const existing = StaleSession.collectionRegistry.get(
+      this.heartbeatCollectionName,
+    );
+    if (existing) {
       this.logInfo(
-        `Created heartbeat collection: ${this.heartbeatCollectionName}`,
+        `Reusing existing heartbeat collection: ${this.heartbeatCollectionName}`,
       );
-      return HeartbeatCollection;
-    } catch (error) {
-      this.logError('Error creating heartbeat collection:', error);
-      throw error;
+      return existing;
     }
+
+    const collection = new Mongo.Collection<HeartbeatCollection>(
+      this.heartbeatCollectionName,
+    );
+    StaleSession.collectionRegistry.set(
+      this.heartbeatCollectionName,
+      collection,
+    );
+    this.logInfo(
+      `Created heartbeat collection: ${this.heartbeatCollectionName}`,
+    );
+    return collection;
   }
 
   private addHeartbeatMethod(): void {
