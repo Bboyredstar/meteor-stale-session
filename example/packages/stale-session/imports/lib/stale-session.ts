@@ -133,11 +133,12 @@ export class StaleSession {
         if (user?._id && this.activityDetected) {
           try {
             await Meteor.callAsync(HEARTBEAT_METHOD_NAME, {});
-            self.logInfo(`Heartbeat sent for user ${user._id}`);
+            !Meteor.isProduction &&
+              self.logInfo(`Heartbeat sent for user ${user._id}`);
           } catch (error) {
             self.logError(
               `An error occurred while trying to call "${HEARTBEAT_METHOD_NAME}"`,
-              { error }
+              { error },
             );
           }
 
@@ -228,7 +229,7 @@ export class StaleSession {
         // heartbeat doc asynchronously, but we guard here too to close the race.
         const user = await Meteor.users.findOneAsync(
           { _id: heartbeat.userId },
-          { fields: { 'services.resume.loginTokens': 1 } }
+          { fields: { 'services.resume.loginTokens': 1 } },
         );
 
         const loginTokens: { when: Date | string }[] =
@@ -244,7 +245,7 @@ export class StaleSession {
           // active session on another device. Only remove the stale heartbeat
           // doc; do NOT wipe their tokens.
           this.logInfo(
-            `Skipping logout for user ${heartbeat.userId}: active session found after stale heartbeat`
+            `Skipping logout for user ${heartbeat.userId}: active session found after stale heartbeat`,
           );
           heartbeatIdsToRemove.push(heartbeat._id);
         } else {
@@ -254,7 +255,7 @@ export class StaleSession {
       }
 
       this.logInfo(
-        `Removing session tokens for: ${userIdsToLogout.join(', ')}`
+        `Removing session tokens for: ${userIdsToLogout.join(', ')}`,
       );
 
       try {
@@ -262,7 +263,7 @@ export class StaleSession {
           await Meteor.users.updateAsync(
             { _id: { $in: userIdsToLogout } },
             { $set: { 'services.resume.loginTokens': [] } },
-            { multi: true }
+            { multi: true },
           );
         }
 
@@ -271,7 +272,7 @@ export class StaleSession {
         });
 
         this.logInfo(
-          `Processed ${heartbeatIdsToRemove.length} stale heartbeat(s), logged out ${userIdsToLogout.length} user(s)`
+          `Processed ${heartbeatIdsToRemove.length} stale heartbeat(s), logged out ${userIdsToLogout.length} user(s)`,
         );
       } catch (error) {
         this.logError('Error processing stale sessions:', error);
@@ -279,18 +280,17 @@ export class StaleSession {
     }, this.heartbeatIntervalMs);
   }
 
-
   private createHeartbeatCollection(): Mongo.Collection<HeartbeatCollection> {
     if (this.HeartbeatCollection) {
       return this.HeartbeatCollection;
     }
     try {
       const HeartbeatCollection = new Mongo.Collection<HeartbeatCollection>(
-        this.heartbeatCollectionName
+        this.heartbeatCollectionName,
       );
 
       this.logInfo(
-        `Created heartbeat collection: ${this.heartbeatCollectionName}`
+        `Created heartbeat collection: ${this.heartbeatCollectionName}`,
       );
       return HeartbeatCollection;
     } catch (error) {
@@ -324,7 +324,7 @@ export class StaleSession {
 
             if (removedCount && removedCount > 0) {
               self.logInfo(
-                `Cleaned up ${removedCount} old heartbeat(s) for user ${userId}`
+                `Cleaned up ${removedCount} old heartbeat(s) for user ${userId}`,
               );
             }
 
@@ -338,7 +338,7 @@ export class StaleSession {
           } catch (error) {
             self.logError(
               `Error processing heartbeat for user ${userId}:`,
-              error
+              error,
             );
             throw error;
           }
@@ -349,7 +349,7 @@ export class StaleSession {
     } catch (error) {
       this.logWarning(
         `${HEARTBEAT_METHOD_NAME} method may already exist:`,
-        error
+        error,
       );
     }
   }
@@ -370,7 +370,7 @@ export class StaleSession {
         this.logInfo('Registered login cleanup hook via Accounts.onLogin');
       } else {
         this.logWarning(
-          'accounts-base package not available, login cleanup hook not registered'
+          'accounts-base package not available, login cleanup hook not registered',
         );
       }
     } catch (error) {
@@ -386,7 +386,7 @@ export class StaleSession {
 
       if (removedCount && removedCount > 0) {
         this.logInfo(
-          `Cleaned up ${removedCount} old heartbeat(s) for user ${userId} on login`
+          `Cleaned up ${removedCount} old heartbeat(s) for user ${userId} on login`,
         );
       }
     } catch (error) {
@@ -419,7 +419,7 @@ export class StaleSession {
   public async cleanupUserHeartbeatsManual(userId: string): Promise<number> {
     if (!Meteor.isServer) {
       throw new Error(
-        'cleanupUserHeartbeatsManual() is only available on the server'
+        'cleanupUserHeartbeatsManual() is only available on the server',
       );
     }
     if (!this.HeartbeatCollection) {
@@ -433,7 +433,7 @@ export class StaleSession {
 
       if (removedCount && removedCount > 0) {
         this.logInfo(
-          `Manually cleaned up ${removedCount} heartbeat(s) for user ${userId}`
+          `Manually cleaned up ${removedCount} heartbeat(s) for user ${userId}`,
         );
       }
 
@@ -441,7 +441,7 @@ export class StaleSession {
     } catch (error) {
       this.logError(
         `Error manually cleaning up heartbeats for user ${userId}:`,
-        error
+        error,
       );
       throw error;
     }
