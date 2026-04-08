@@ -27,6 +27,7 @@ export interface StaleSessionServerConfig
 export interface HeartbeatCollection {
   _id: string;
   userId: string;
+  sessionId?: string; // Hashed login token
   createdAt: Date;
 }
 

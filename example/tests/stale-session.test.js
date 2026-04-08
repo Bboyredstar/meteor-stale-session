@@ -137,5 +137,53 @@ if (Meteor.isServer) {
       assert.strictEqual(updatedUser2.services.resume.loginTokens.length, 1, 'Newer login token should NOT be cleared');
       assert.strictEqual(updatedUser2.services.resume.loginTokens[0].hashedToken, 'new_token');
     });
+
+    it('Scenario 5: Multi-device logout - only specific stale session is removed', async function () {
+      const user = await Meteor.users.findOneAsync({ username: 'testuser' });
+      
+      const session1 = 'hashed_token_1';
+      const session2 = 'hashed_token_2';
+      const now = new Date();
+      const oldDate = new Date(now.getTime() - 10000); // 10s ago
+      
+      // 1. Setup two sessions for the same user
+      await Meteor.users.updateAsync(user._id, {
+        $set: { 
+          'services.resume.loginTokens': [
+            { when: oldDate, hashedToken: session1 }, // Stale session
+            { when: now, hashedToken: session2 }      // Fresh session
+          ] 
+        }
+      });
+
+      // 2. Setup heartbeats for both
+      await staleSession.heartbeatCollection.removeAsync({ userId: user._id });
+      await staleSession.heartbeatCollection.insertAsync({
+        userId: user._id,
+        sessionId: session1,
+        createdAt: oldDate
+      });
+      await staleSession.heartbeatCollection.insertAsync({
+        userId: user._id,
+        sessionId: session2,
+        createdAt: now
+      });
+
+      // 3. Wait for interval
+      await new Promise(resolve => setTimeout(resolve, 7000));
+
+      // 4. Verify results
+      const updatedUser = await Meteor.users.findOneAsync(user._id);
+      const remainingTokens = updatedUser.services.resume.loginTokens;
+      
+      assert.strictEqual(remainingTokens.length, 1, 'Only one token should remain');
+      assert.strictEqual(remainingTokens[0].hashedToken, session2, 'Active session 2 should remain');
+      
+      const staleDoc = await staleSession.heartbeatCollection.findOneAsync({ sessionId: session1 });
+      assert.ok(!staleDoc, 'Stale heartbeat doc 1 should be removed');
+      
+      const activeDoc = await staleSession.heartbeatCollection.findOneAsync({ sessionId: session2 });
+      assert.ok(activeDoc, 'Active heartbeat doc 2 should remain');
+    });
   });
 }

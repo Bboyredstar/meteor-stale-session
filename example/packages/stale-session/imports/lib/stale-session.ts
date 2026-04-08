@@ -20,7 +20,10 @@ import type {
   HeartbeatResponse,
 } from './types';
 
-
+/**
+ * StaleSession class manages both client-side activity detection and
+ * server-side stale session cleanup.
+ */
 export class StaleSession {
   protected logger?: Logger;
   protected heartbeatIntervalMs: number;
@@ -38,11 +41,12 @@ export class StaleSession {
     HeartbeatCollection
   >;
 
-  // Static registry to avoid duplicate Mongo.Collection creation
+  // Static registry to avoid duplicate Mongo.Collection creation across multiple instances
   private static collectionRegistry = new Map<
     string,
     Mongo.Collection<HeartbeatCollection, HeartbeatCollection>
   >();
+
   public constructor(config?: Partial<StaleSessionConfig>, logger?: Logger) {
     this.logger = logger;
 
@@ -60,6 +64,9 @@ export class StaleSession {
     this.validateConfig();
   }
 
+  /**
+   * Validates the current configuration against the defined schema.
+   */
   protected validateConfig(): void {
     const configToValidate: Partial<StaleSessionConfig> = {
       heartbeatIntervalMs: this.heartbeatIntervalMs,
@@ -93,7 +100,9 @@ export class StaleSession {
       this.logger?.err?.(message, ...args);
   }
 
-  // Unified run method that determines client vs server behavior
+  /**
+   * Unified run method that initializes client or server behavior.
+   */
   public async run(): Promise<void> {
     if (Meteor.isClient) {
       this.runClient();
@@ -111,6 +120,7 @@ export class StaleSession {
   private runClient(): void {
     const self = this;
 
+    // Send heartbeats to the server if activity was detected
     Meteor.setInterval(async () => {
       const user = Meteor.user({ fields: { _id: 1 } });
 
@@ -130,12 +140,15 @@ export class StaleSession {
       }
     }, this.heartbeatIntervalMs);
 
-    // Simple throttle: ignore events for 5s after the first detection
+    /**
+     * Native activity detection without external dependencies.
+     * Uses a simple throttle mechanism to reduce overhead.
+     */
     let throttled = false;
     const onActivity = () => {
       if (throttled) return;
       throttled = true;
-      setTimeout(() => { throttled = false; }, 5000);
+      setTimeout(() => { throttled = false; }, 5000); // 5s throttle
 
       if (!self.activityDetected) {
         self.activityDetected = true;
@@ -190,78 +203,81 @@ export class StaleSession {
     }
 
     Meteor.setInterval(async () => {
-      const overdueTimestamp = new Date().getTime() - this.inactiveTimeoutMs;
+      const nowTs = new Date().getTime();
+      const overdueTimestamp = nowTs - this.inactiveTimeoutMs;
 
       const heartbeatQuery = {
         createdAt: { $lte: new Date(overdueTimestamp) },
       };
 
       const heartbeats = await this.HeartbeatCollection?.find(heartbeatQuery, {
-        fields: { userId: 1, createdAt: 1 },
+        fields: { userId: 1, sessionId: 1, createdAt: 1 },
       })?.fetchAsync();
 
       if (!heartbeats?.length) {
         return;
       }
 
-      const heartbeatIdsToRemove: string[] = [];
-      const userIdsToLogout: string[] = [];
-
       for (const heartbeat of heartbeats) {
-        // Re-check whether the user has logged in on another device AFTER this
-        // heartbeat was recorded. If any login token is newer than the stale
-        // heartbeat's createdAt, the user re-authenticated and must not be
-        // logged out — the onLogin hook will have already cleaned up the stale
-        // heartbeat doc asynchronously, but we guard here too to close the race.
+        /**
+         * Re-check whether the specific session is still fresh.
+         * If the heartbeat is stale, we check if the specific login token still exists
+         * and hasn't been updated since the heartbeat was recorded.
+         */
         const user = await Meteor.users.findOneAsync(
           { _id: heartbeat.userId },
           { fields: { 'services.resume.loginTokens': 1 } },
         );
 
-        const loginTokens: { when: Date | string }[] =
+        const loginTokens: { when: Date | string; hashedToken: string }[] =
           (user as any)?.services?.resume?.loginTokens ?? [];
 
-        const hasNewerSession = loginTokens.some((token) => {
-          const tokenDate = new Date(token.when);
-          return tokenDate > heartbeat.createdAt;
-        });
-
-        if (hasNewerSession) {
-          // User has logged in after this heartbeat was created — they have an
-          // active session on another device. Only remove the stale heartbeat
-          // doc; do NOT wipe their tokens.
-          this.logInfo(
-            `Skipping logout for user ${heartbeat.userId}: active session found after stale heartbeat`,
+        // If we have a sessionId, we target only that specific session
+        if (heartbeat.sessionId) {
+          const specificToken = loginTokens.find(
+            (t) => t.hashedToken === heartbeat.sessionId
           );
-          heartbeatIdsToRemove.push(heartbeat._id);
-        } else {
-          heartbeatIdsToRemove.push(heartbeat._id);
-          userIdsToLogout.push(heartbeat.userId);
-        }
-      }
 
-      this.logInfo(
-        `Removing session tokens for: ${userIdsToLogout.join(', ')}`,
-      );
+          if (!specificToken) {
+            // Token already gone (e.g. manual logout), just cleanup heartbeat
+            await this.HeartbeatCollection!.removeAsync(heartbeat._id);
+            continue;
+          }
 
-      try {
-        if (userIdsToLogout.length > 0) {
+          const tokenDate = new Date(specificToken.when);
+          
+          // Safety: If the token itself is newer than the stale activity,
+          // it belongs to a new session (e.g. re-auth on same device) or re-login.
+          if (tokenDate.getTime() > heartbeat.createdAt.getTime() || tokenDate.getTime() > overdueTimestamp) {
+            this.logInfo(`Skipping logout for session ${heartbeat.sessionId} of user ${heartbeat.userId}: fresh or newer than stale activity`);
+            await this.HeartbeatCollection!.removeAsync(heartbeat._id);
+            continue;
+          }
+
+          // Surgically remove only the stale session token
+          this.logInfo(`Logging out stale session ${heartbeat.sessionId} for user ${heartbeat.userId}`);
           await Meteor.users.updateAsync(
-            { _id: { $in: userIdsToLogout } },
-            { $set: { 'services.resume.loginTokens': [] } },
-            { multi: true },
+            { _id: heartbeat.userId },
+            { $pull: { 'services.resume.loginTokens': { hashedToken: heartbeat.sessionId } } as any }
           );
+          await this.HeartbeatCollection!.removeAsync(heartbeat._id);
+        } else {
+          // Legacy heartbeat without sessionId: revert to "all sessions" check
+          // but we'll still only logout if ALL tokens are stale.
+          const hasFreshTokens = loginTokens.some((token) => {
+            const tokenDate = new Date(token.when);
+            return tokenDate.getTime() > overdueTimestamp || tokenDate.getTime() > heartbeat.createdAt.getTime();
+          });
+
+          if (!hasFreshTokens) {
+            this.logInfo(`Logging out user ${heartbeat.userId} (legacy stale heartbeat)`);
+            await Meteor.users.updateAsync(
+              { _id: heartbeat.userId },
+              { $set: { 'services.resume.loginTokens': [] } }
+            );
+          }
+          await this.HeartbeatCollection!.removeAsync(heartbeat._id);
         }
-
-        await this.HeartbeatCollection!.removeAsync({
-          _id: { $in: heartbeatIdsToRemove },
-        });
-
-        this.logInfo(
-          `Processed ${heartbeatIdsToRemove.length} stale heartbeat(s), logged out ${userIdsToLogout.length} user(s)`,
-        );
-      } catch (error) {
-        this.logError('Error processing stale sessions:', error);
       }
     }, this.heartbeatIntervalMs);
   }
@@ -271,33 +287,27 @@ export class StaleSession {
       return this.HeartbeatCollection;
     }
 
-    const existing = StaleSession.collectionRegistry.get(
-      this.heartbeatCollectionName,
-    );
+    const name = this.heartbeatCollectionName;
+    const existing = StaleSession.collectionRegistry.get(name);
     if (existing) {
-      this.logInfo(
-        `Reusing existing heartbeat collection: ${this.heartbeatCollectionName}`,
-      );
+      this.logInfo(`Reusing existing heartbeat collection: ${name}`);
       return existing;
     }
 
-    const collection = new Mongo.Collection<HeartbeatCollection>(
-      this.heartbeatCollectionName,
-    );
-    StaleSession.collectionRegistry.set(
-      this.heartbeatCollectionName,
-      collection,
-    );
-    this.logInfo(
-      `Created heartbeat collection: ${this.heartbeatCollectionName}`,
-    );
-    return collection;
+    try {
+      const collection = new Mongo.Collection<HeartbeatCollection>(name);
+      StaleSession.collectionRegistry.set(name, collection);
+      this.logInfo(`Created heartbeat collection: ${name}`);
+      return collection;
+    } catch (error) {
+      this.logError(`Error creating heartbeat collection "${name}":`, error);
+      throw error;
+    }
   }
 
   private addHeartbeatMethod(): void {
     const self = this;
 
-    // Check if method already exists (simplified check for unified class)
     try {
       Meteor.methods({
         async [HEARTBEAT_METHOD_NAME](): Promise<
@@ -308,33 +318,35 @@ export class StaleSession {
             return;
           }
 
-          self.logInfo(`Detected heartbeat from user ${userId}`);
+          // Extract session ID from login token
+          let sessionId: string | undefined;
+          if (Meteor.isServer && this.connection && typeof Package !== 'undefined' && Package['accounts-base']) {
+             const Accounts = Package['accounts-base'].Accounts;
+             const loginToken = Accounts._getLoginToken(this.connection.id);
+             if (loginToken) {
+               sessionId = Accounts._hashLoginToken(loginToken);
+             }
+          }
 
           try {
-            // Always remove possible old entities from this user
-            // This ensures cleanup happens even if login hooks don't work
-            const removedCount = await self.HeartbeatCollection?.removeAsync({
-              userId,
-            });
-
-            if (removedCount && removedCount > 0) {
-              self.logInfo(
-                `Cleaned up ${removedCount} old heartbeat(s) for user ${userId}`,
-              );
+            // Update the single heartbeat for this specific session
+            const query: any = { userId };
+            if (sessionId) {
+              query.sessionId = sessionId;
             }
+
+            await self.HeartbeatCollection?.removeAsync(query);
 
             const createdAt = new Date();
             const _id = await self.HeartbeatCollection?.insertAsync({
               userId,
+              sessionId,
               createdAt,
             });
 
             return { _id: _id!, createdAt };
           } catch (error) {
-            self.logError(
-              `Error processing heartbeat for user ${userId}:`,
-              error,
-            );
+            self.logError(`Error processing heartbeat for user ${userId}:`, error);
             throw error;
           }
         },
@@ -342,103 +354,61 @@ export class StaleSession {
 
       this.logInfo(`Registered heartbeat method: ${HEARTBEAT_METHOD_NAME}`);
     } catch (error) {
-      this.logWarning(
-        `${HEARTBEAT_METHOD_NAME} method may already exist:`,
-        error,
-      );
+        this.logWarning(`${HEARTBEAT_METHOD_NAME} method registration skipped (likely already exists)`);
     }
   }
 
   private addLoginCleanupHook(): void {
     const self = this;
 
-    // Hook into user login to clean up old heartbeats
     try {
-      // Try to use Accounts.onLogin if accounts-base package is available
       if (typeof Package !== 'undefined' && Package['accounts-base']) {
         const Accounts = Package['accounts-base'].Accounts;
         Accounts.onLogin(async (info: any) => {
           if (info.user?._id) {
-            await self.cleanupUserHeartbeats(info.user._id);
+            const loginToken = Accounts._getLoginToken(info.connection.id);
+            const sessionId = loginToken ? Accounts._hashLoginToken(loginToken) : undefined;
+            await self.cleanupUserHeartbeats(info.user._id, sessionId);
           }
         });
         this.logInfo('Registered login cleanup hook via Accounts.onLogin');
-      } else {
-        this.logWarning(
-          'accounts-base package not available, login cleanup hook not registered',
-        );
       }
     } catch (error) {
       this.logWarning('Could not register login cleanup hook:', error);
     }
   }
 
-  private async cleanupUserHeartbeats(userId: string): Promise<void> {
+  private async cleanupUserHeartbeats(userId: string, sessionId?: string): Promise<void> {
     try {
-      const removedCount = await this.HeartbeatCollection?.removeAsync({
-        userId: userId,
-      });
-
-      if (removedCount && removedCount > 0) {
-        this.logInfo(
-          `Cleaned up ${removedCount} old heartbeat(s) for user ${userId} on login`,
-        );
+      const query: any = { userId };
+      if (sessionId) {
+        query.sessionId = sessionId;
       }
+      await this.HeartbeatCollection?.removeAsync(query);
     } catch (error) {
       this.logError(`Error cleaning up heartbeats for user ${userId}:`, error);
     }
   }
 
   // Getters for configuration
-  public getHeartbeatInterval(): number {
-    return this.heartbeatIntervalMs;
-  }
+  public getHeartbeatInterval(): number { return this.heartbeatIntervalMs; }
+  public getInactiveTimeout(): number { return this.inactiveTimeoutMs; }
+  public isForceLogoutEnabled(): boolean { return this.forceLogout; }
+  public getHeartbeatCollectionName(): string { return this.heartbeatCollectionName; }
+  public getActivityEvents(): string | undefined { return this.activityEvents; }
 
-  public getInactiveTimeout(): number {
-    return this.inactiveTimeoutMs;
-  }
-
-  public isForceLogoutEnabled(): boolean {
-    return this.forceLogout;
-  }
-
-  public getHeartbeatCollectionName(): string {
-    return this.heartbeatCollectionName;
-  }
-
-  public getActivityEvents(): string | undefined {
-    return this.activityEvents;
-  }
-
-  // Cleanup methods
-  public async cleanupUserHeartbeatsManual(userId: string): Promise<number> {
+  // Manual cleanup for specific scenarios
+  public async cleanupUserHeartbeatsManual(userId: string, sessionId?: string): Promise<number> {
     if (!Meteor.isServer) {
-      throw new Error(
-        'cleanupUserHeartbeatsManual() is only available on the server',
-      );
+        throw new Error('cleanupUserHeartbeatsManual() is only available on the server');
     }
     if (!this.HeartbeatCollection) {
-      throw new Error('HeartbeatCollection not initialized. Call run() first.');
+        throw new Error('HeartbeatCollection not initialized');
     }
-
-    try {
-      const removedCount = await this.HeartbeatCollection.removeAsync({
-        userId: userId,
-      });
-
-      if (removedCount && removedCount > 0) {
-        this.logInfo(
-          `Manually cleaned up ${removedCount} heartbeat(s) for user ${userId}`,
-        );
-      }
-
-      return removedCount || 0;
-    } catch (error) {
-      this.logError(
-        `Error manually cleaning up heartbeats for user ${userId}:`,
-        error,
-      );
-      throw error;
+    const query: any = { userId };
+    if (sessionId) {
+      query.sessionId = sessionId;
     }
+    return (await this.HeartbeatCollection.removeAsync(query)) || 0;
   }
 }
