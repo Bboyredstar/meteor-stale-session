@@ -1,6 +1,6 @@
 Package.describe({
   name: 'bboyredstar:stale-session',
-  version: '0.1.2',
+  version: '0.1.3',
   summary: 'Activity detection for the session timeout',
   git: 'https://github.com/Bboyredstar/meteor-stale-session',
   documentation: './README.md',

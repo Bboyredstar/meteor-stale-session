@@ -127,8 +127,6 @@ export class StaleSession {
       if (user?._id && this.activityDetected) {
         try {
           await Meteor.callAsync(HEARTBEAT_METHOD_NAME, {});
-          !Meteor.isProduction &&
-            self.logInfo(`Heartbeat sent for user ${user._id}`);
         } catch (error) {
           self.logError(
             `An error occurred while trying to call "${HEARTBEAT_METHOD_NAME}"`,
@@ -152,7 +150,6 @@ export class StaleSession {
 
       if (!self.activityDetected) {
         self.activityDetected = true;
-        !Meteor.isProduction && self.logInfo('User activity detected');
       }
     };
 
@@ -197,6 +194,7 @@ export class StaleSession {
 
   // Server-specific methods
   private runStaleSession(): void {
+    if (!Meteor.isServer) return;
     if (!this.forceLogout) {
       this.logInfo(`"forceLogout" is false, stale session is disabled!`);
       return;
@@ -214,9 +212,7 @@ export class StaleSession {
         fields: { userId: 1, sessionId: 1, createdAt: 1 },
       })?.fetchAsync();
 
-      if (!heartbeats?.length) {
-        return;
-      }
+      if (!heartbeats?.length) return;
 
       for (const heartbeat of heartbeats) {
         /**
@@ -234,9 +230,7 @@ export class StaleSession {
 
         // If we have a sessionId, we target only that specific session
         if (heartbeat.sessionId) {
-          const specificToken = loginTokens.find(
-            (t) => t.hashedToken === heartbeat.sessionId
-          );
+          const specificToken = loginTokens.find((t) => t.hashedToken === heartbeat.sessionId);
 
           if (!specificToken) {
             // Token already gone (e.g. manual logout), just cleanup heartbeat
@@ -249,7 +243,6 @@ export class StaleSession {
           // Safety: If the token itself is newer than the stale activity,
           // it belongs to a new session (e.g. re-auth on same device) or re-login.
           if (tokenDate.getTime() > heartbeat.createdAt.getTime() || tokenDate.getTime() > overdueTimestamp) {
-            this.logInfo(`Skipping logout for session ${heartbeat.sessionId} of user ${heartbeat.userId}: fresh or newer than stale activity`);
             await this.HeartbeatCollection!.removeAsync(heartbeat._id);
             continue;
           }
@@ -258,12 +251,11 @@ export class StaleSession {
           this.logInfo(`Logging out stale session ${heartbeat.sessionId} for user ${heartbeat.userId}`);
           await Meteor.users.updateAsync(
             { _id: heartbeat.userId },
-            { $pull: { 'services.resume.loginTokens': { hashedToken: heartbeat.sessionId } } as any }
+            { $pull: { 'services.resume.loginTokens': { hashedToken: specificToken.hashedToken } } as any }
           );
           await this.HeartbeatCollection!.removeAsync(heartbeat._id);
         } else {
           // Legacy heartbeat without sessionId: revert to "all sessions" check
-          // but we'll still only logout if ALL tokens are stale.
           const hasFreshTokens = loginTokens.some((token) => {
             const tokenDate = new Date(token.when);
             return tokenDate.getTime() > overdueTimestamp || tokenDate.getTime() > heartbeat.createdAt.getTime();
@@ -283,9 +275,7 @@ export class StaleSession {
   }
 
   private createHeartbeatCollection(): Mongo.Collection<HeartbeatCollection> {
-    if (this.HeartbeatCollection) {
-      return this.HeartbeatCollection;
-    }
+    if (this.HeartbeatCollection) return this.HeartbeatCollection;
 
     const name = this.heartbeatCollectionName;
     const existing = StaleSession.collectionRegistry.get(name);
@@ -314,26 +304,18 @@ export class StaleSession {
           HeartbeatResponse | undefined
         > {
           const userId = Meteor.userId();
-          if (!userId) {
-            return;
-          }
+          if (!userId) return;
 
-          // Extract session ID from login token
+          // Extract session ID directly (it is already the hash)
           let sessionId: string | undefined;
           if (Meteor.isServer && this.connection && typeof Package !== 'undefined' && Package['accounts-base']) {
              const Accounts = Package['accounts-base'].Accounts;
-             const loginToken = Accounts._getLoginToken(this.connection.id);
-             if (loginToken) {
-               sessionId = Accounts._hashLoginToken(loginToken);
-             }
+             sessionId = Accounts._getLoginToken(this.connection.id);
           }
 
           try {
-            // Update the single heartbeat for this specific session
             const query: any = { userId };
-            if (sessionId) {
-              query.sessionId = sessionId;
-            }
+            if (sessionId) query.sessionId = sessionId;
 
             await self.HeartbeatCollection?.removeAsync(query);
 
@@ -366,8 +348,7 @@ export class StaleSession {
         const Accounts = Package['accounts-base'].Accounts;
         Accounts.onLogin(async (info: any) => {
           if (info.user?._id) {
-            const loginToken = Accounts._getLoginToken(info.connection.id);
-            const sessionId = loginToken ? Accounts._hashLoginToken(loginToken) : undefined;
+            const sessionId = Accounts._getLoginToken(info.connection.id);
             await self.cleanupUserHeartbeats(info.user._id, sessionId);
           }
         });
@@ -381,9 +362,7 @@ export class StaleSession {
   private async cleanupUserHeartbeats(userId: string, sessionId?: string): Promise<void> {
     try {
       const query: any = { userId };
-      if (sessionId) {
-        query.sessionId = sessionId;
-      }
+      if (sessionId) query.sessionId = sessionId;
       await this.HeartbeatCollection?.removeAsync(query);
     } catch (error) {
       this.logError(`Error cleaning up heartbeats for user ${userId}:`, error);
@@ -406,9 +385,7 @@ export class StaleSession {
         throw new Error('HeartbeatCollection not initialized');
     }
     const query: any = { userId };
-    if (sessionId) {
-      query.sessionId = sessionId;
-    }
+    if (sessionId) query.sessionId = sessionId;
     return (await this.HeartbeatCollection.removeAsync(query)) || 0;
   }
 }
